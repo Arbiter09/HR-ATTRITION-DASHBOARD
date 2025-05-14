@@ -359,17 +359,21 @@ def update_kpis(dept, gender, overtime, education, joblevel, sel):
     Input("selected-data-store", "data"),
 )
 def update_visuals(dept, gender, overtime, education, joblevel, sel):
+    """
+    Builds / refreshes every graph each time a filter or a chart‑selection changes.
+    Keeps the Attrition colour‑scheme absolutely consistent:
+        • "Yes" → orange  (#ff8c42)
+        • "No"  → charcoal (#4a4a4a)
+    """
     try:
-        # ⇢ 1. FILTER DATA  ────────────────────────────────────────────────────────
-        filt_vals = dict(
-            department=dept, gender=gender, overtime=overtime,
-            education=education, joblevel=joblevel
-        )
+        # 1 ── FILTER DATA ───────────────────────────────────────────────────────
+        filt_vals = dict(department=dept, gender=gender, overtime=overtime,
+                         education=education, joblevel=joblevel)
         dff = filter_dataframe(df, filt_vals, sel)
 
-        # ⇢ 2. COMMON STYLE BLOCKS  ───────────────────────────────────────────────
-        base_colors   = [colors["primary"], colors["secondary"]]  # bar / pie
-        attr_colors   = [colors["retention"], colors["attrition"]]  # yes / no
+        # 2 ── COLOUR & LAYOUT UTILS ─────────────────────────────────────────────
+        base_colors      = [colors["primary"], colors["secondary"]]   # for non‑attrition pies/bars
+        attr_color_map   = {"Yes": colors["attrition"], "No": colors["retention"]}
         common_layout = dict(
             font_family="Segoe UI", font_size=9,
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -377,25 +381,25 @@ def update_visuals(dept, gender, overtime, education, joblevel, sel):
             legend=dict(orientation="h", y=1.02, yanchor="bottom",
                         x=1, xanchor="right", font=dict(size=8)),
         )
-        # NEW → single place to say “never wash the selected trace”
         sel_style = dict(
-            selected=dict(marker=dict(opacity=1)),   # keep selected full‑strength
-            unselected=dict(marker=dict(opacity=0.35)),  # dim everything else *slightly*
+            selected=dict(marker=dict(opacity=1)),
+            unselected=dict(marker=dict(opacity=0.35)),
         )
 
-        # ⇢ 3. GRAPHS  ─────────────────────────────────────────────────────────────
-        # 3.1 Attrition by Department (bar) .......................................
+        # 3 ── GRAPHS ────────────────────────────────────────────────────────────
+        # 3.1  Attrition by Department
         dept_counts = dff.groupby(["Department", "Attrition"]).size().reset_index(name="Count")
         bar_fig = px.bar(
             dept_counts, x="Department", y="Count", color="Attrition",
-            barmode="group", color_discrete_sequence=base_colors,
-            title="Attrition by Department"
+            barmode="group", title="Attrition by Department",
+            color_discrete_map=attr_color_map,
+            category_orders={"Attrition": ["No", "Yes"]},
         )
         bar_fig.update_layout(**common_layout)
         bar_fig.update_xaxes(tickangle=45, tickfont=dict(size=8))
         bar_fig.update_traces(**sel_style, selector=dict(type="bar"))
 
-        # 3.2 Gender distribution (pie) ...........................................
+        # 3.2  Gender distribution (pie) – not tied to Attrition
         pie_fig = px.pie(
             dff, names="Gender", title="Gender Distribution",
             color_discrete_sequence=base_colors,
@@ -404,35 +408,35 @@ def update_visuals(dept, gender, overtime, education, joblevel, sel):
         pie_fig.update_traces(textinfo="percent+label", textfont_size=8,
                               textposition="inside")
 
-        # 3.3 Age histogram .......................................................
+        # 3.3  Age histogram by Attrition
         age_fig = px.histogram(
             dff, x="Age", color="Attrition", nbins=15,
             title="Age Distribution by Attrition",
-            color_discrete_sequence=attr_colors,
+            color_discrete_map=attr_color_map,
+            category_orders={"Attrition": ["No", "Yes"]},
         )
         age_fig.update_layout(**common_layout, dragmode="select")
         age_fig.update_traces(**sel_style, selector=dict(type="histogram"))
 
-        # 3.4 Job‑role bar chart ..................................................
+        # 3.4  Job‑Role bar chart by Attrition
         role_counts = dff.groupby(["JobRole", "Attrition"]).size().reset_index(name="Count")
         role_fig = px.bar(
             role_counts, x="JobRole", y="Count", color="Attrition",
             barmode="group", title="Job Role Distribution by Attrition",
-            color_discrete_sequence=attr_colors,
+            color_discrete_map=attr_color_map,
+            category_orders={"Attrition": ["No", "Yes"]},
         )
         role_fig.update_layout(**common_layout,
                                xaxis=dict(categoryorder="total descending",
                                           tickangle=45, tickfont=dict(size=7)))
         role_fig.update_traces(**sel_style, selector=dict(type="bar"))
 
-        # 3.5 Treemap .............................................................
+        # 3.5  Treemap (already uses the map)
         tree_df = dff.groupby(["Department", "JobRole", "Attrition"]).size()\
                      .reset_index(name="Count")
         tree_fig = px.treemap(
             tree_df, path=["Department", "JobRole", "Attrition"], values="Count",
-            color="Attrition",
-            color_discrete_map={"Yes": colors["attrition"],
-                                "No": colors["retention"]},
+            color="Attrition", color_discrete_map=attr_color_map,
             title="Hierarchical View of Attrition",
         )
         tree_fig.update_layout(
@@ -442,7 +446,7 @@ def update_visuals(dept, gender, overtime, education, joblevel, sel):
         )
         tree_fig.update_traces(hovertemplate="<b>%{label}</b><br>Count: %{value}<extra></extra>")
 
-        # 3.6 PCA scatter .........................................................
+        # 3.6  PCA scatter by Attrition
         num_cols = ["Age", "MonthlyIncome", "TotalWorkingYears",
                     "YearsAtCompany", "YearsInCurrentRole"]
         avail = [c for c in num_cols if c in dff.columns]
@@ -462,7 +466,8 @@ def update_visuals(dept, gender, overtime, education, joblevel, sel):
                 pca_df, x="PCA1", y="PCA2", color="Attrition",
                 title=f"PCA Analysis (Explained Var: "
                       f"{pca_df[['PCA1','PCA2']].var().sum():.2%})",
-                color_discrete_sequence=attr_colors,
+                color_discrete_map=attr_color_map,
+                category_orders={"Attrition": ["No", "Yes"]},
                 custom_data=["EmployeeID"] if "EmployeeID" in pca_df else None,
             )
             pca_fig.update_layout(**common_layout, dragmode="select")
@@ -475,7 +480,7 @@ def update_visuals(dept, gender, overtime, education, joblevel, sel):
             pca_fig.update_layout(**common_layout,
                                   title="PCA Analysis (Unavailable)")
 
-        # ⇢ 4. GRID LAYOUT  ────────────────────────────────────────────────────────
+        # 4 ── GRID LAYOUT RETURN ────────────────────────────────────────────────
         return [
             dbc.Row(
                 [
@@ -512,6 +517,7 @@ def update_visuals(dept, gender, overtime, education, joblevel, sel):
     except Exception as e:
         return html.Div(f"Error processing data: {e}",
                         style={"color": "red", "padding": "10px"})
+
 # ─────────  END OF REPLACEMENT BLOCK ──────────
 
 # =========================================
