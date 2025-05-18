@@ -76,7 +76,7 @@ VIZ/
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/hr-attrition-dashboard.git
+git clone https://github.com/Arbiter09/HR-ATTRITION-DASHBOARD.git
 cd hr-attrition-dashboard
 ```
 
